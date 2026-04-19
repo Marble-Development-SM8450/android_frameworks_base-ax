@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -197,6 +198,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 val LocalBlurEnabled = staticCompositionLocalOf { false }
+val LocalQsScrolling = compositionLocalOf { false }
 
 @SuppressLint("ValidFragment")
 class QSFragmentCompose
@@ -339,6 +341,7 @@ constructor(
                     CompositionLocalProvider(
                         LocalTileScale provides tileScale,
                         LocalBlurEnabled provides blurEnabled,
+                        LocalQsScrolling provides scrollState.isScrollInProgress,
                         LocalVolumeSliderViewModel provides volumeSliderViewModel,
                         LocalRingerSliderViewModel provides ringerSliderViewModel,
                     ) {
@@ -362,6 +365,9 @@ constructor(
             }
         }
         val transitionToCookie = remember { mutableMapOf<TransitionState.Transition, Int>() }
+
+        val lastScene = remember { mutableStateOf<SceneKey?>(null) }
+
         val sceneState =
             rememberMutableSceneTransitionLayoutState(
                 initialScene = remember { viewModel.expansionState.toIdleSceneKey() },
@@ -369,6 +375,7 @@ constructor(
                     transitions {
                         from(QuickQuickSettings, QuickSettings) {
                             quickQuickSettingsToQuickSettings(
+                                shouldFadeQqsTiles = lastScene.value == QuickSettings,
                                 animateTilesExpansion = viewModel::animateTilesExpansion::get,
                                 animateBrightnessSlider = viewModel::animateBrightnessSlider::get
                             )
@@ -393,6 +400,10 @@ constructor(
                     )
                 },
             )
+
+        LaunchedEffect(sceneState.currentScene) {
+            lastScene.value = sceneState.currentScene
+        }
 
         LaunchedEffect(Unit) {
             launch {
@@ -980,6 +991,7 @@ constructor(
                             modifier =
                                 Modifier.fillMaxWidth()
                                     .sysuiResTag(ResIdTags.quickSettingsPanel)
+                                    .graphicsLayer { }
                                     .padding(
                                         top = QuickSettingsShade.Dimensions.Padding,
                                         start = qsHorizontalMargin(),

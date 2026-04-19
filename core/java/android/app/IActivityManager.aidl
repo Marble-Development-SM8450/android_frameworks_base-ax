@@ -1072,5 +1072,23 @@ interface IActivityManager {
     
     void systemThreadBoost(int tid, long duration);
 
+    void flingBoost(boolean active);
+
+    void compositionBoost(long durationMs);
+
+    void gpuBoost(boolean active);
+
+    void shadeBoost(boolean active);
+
     void releaseMemory(int minAdj, int maxKillCount, boolean includeUIProcesses, boolean skipCamera);
+
+    String getSpoofPifConfig();
+
+    String getSpoofGamePropsConfig();
+
+    String getSpoofTrickyStoreTarget();
+
+    String getSpoofTrickyStoreKeyBox();
+
+    String getSpoofTrickyStorePatch();
 }

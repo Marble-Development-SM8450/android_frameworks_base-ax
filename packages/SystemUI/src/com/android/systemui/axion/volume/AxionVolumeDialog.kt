@@ -18,18 +18,21 @@
 package com.android.systemui.axion.volume
 
 import android.content.Context
+import android.graphics.Rect
+import android.graphics.Region
 import android.os.PowerManager
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.Window
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.ComponentDialog
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
@@ -39,6 +42,8 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -118,14 +123,25 @@ class AxionVolumeDialog @Inject constructor(
             }
         }
 
-    override fun onTouchEvent(e: MotionEvent): Boolean = false
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (isShowing && e.action == MotionEvent.ACTION_OUTSIDE) {
+            if (viewModel.visibilityState == VisibilityState.SHOWING) {
+                viewModel.visibilityState = VisibilityState.DISMISSED
+            }
+            return true
+        }
+        return false
+    }
 
     private inner class FrameLayoutTouchPassthrough(
         context: Context,
-    ) : FrameLayout(context), DialogWindowProvider {
+    ) : FrameLayout(context), DialogWindowProvider,
+        ViewTreeObserver.OnComputeInternalInsetsListener {
 
         override val window: Window
             get() = this@AxionVolumeDialog.window!!
+
+        private val contentBounds = Rect()
 
         private val compose = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
@@ -143,18 +159,22 @@ class AxionVolumeDialog @Inject constructor(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .clickable(
-                                    interactionSource = null,
-                                    indication = null
-                                ) {
-                                    if (viewModel.visibilityState == VisibilityState.SHOWING) {
-                                        viewModel.visibilityState = VisibilityState.DISMISSED
-                                    }
-                                }
                                 .padding(12.dp),
                             contentAlignment = if (isLeftSide) Alignment.CenterStart else Alignment.CenterEnd
                         ) {
-                            AxionVolumeDialogContent(viewModel)
+                            Box(
+                                modifier = Modifier.onGloballyPositioned { coords ->
+                                    val bounds = coords.boundsInWindow()
+                                    contentBounds.set(
+                                        bounds.left.toInt(),
+                                        bounds.top.toInt(),
+                                        bounds.right.toInt(),
+                                        bounds.bottom.toInt()
+                                    )
+                                }
+                            ) {
+                                AxionVolumeDialogContent(viewModel)
+                            }
                         }
                     }
                 }
@@ -166,6 +186,32 @@ class AxionVolumeDialog @Inject constructor(
             clipToPadding = false
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
             addView(compose, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            setOnApplyWindowInsetsListener { v, insets ->
+                val safe = insets.getInsets(
+                    WindowInsets.Type.displayCutout() or
+                        WindowInsets.Type.navigationBars() or
+                        WindowInsets.Type.statusBars()
+                )
+                v.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+                WindowInsets.CONSUMED
+            }
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            viewTreeObserver.addOnComputeInternalInsetsListener(this)
+        }
+
+        override fun onDetachedFromWindow() {
+            super.onDetachedFromWindow()
+            viewTreeObserver.removeOnComputeInternalInsetsListener(this)
+        }
+
+        override fun onComputeInternalInsets(info: ViewTreeObserver.InternalInsetsInfo) {
+            info.setTouchableInsets(ViewTreeObserver.InternalInsetsInfo.TOUCHABLE_INSETS_REGION)
+            if (!contentBounds.isEmpty) {
+                info.touchableRegion.set(Region(contentBounds))
+            }
         }
 
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {

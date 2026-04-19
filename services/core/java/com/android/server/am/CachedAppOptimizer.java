@@ -278,10 +278,10 @@ public class CachedAppOptimizer {
     // Defaults for phenotype flags.
     @VisibleForTesting static final boolean DEFAULT_USE_COMPACTION = true;
     @VisibleForTesting static final boolean DEFAULT_USE_FREEZER = true;
-    @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_1 = 5_000;
-    @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_2 = 10_000;
-    @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_3 = 500;
-    @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_4 = 5*60*1000;
+    @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_1 = 30_000;
+    @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_2 = 60_000;
+    @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_3 = 10_000;
+    @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_4 = 15*60*1000;
     @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_5 = 10 * 60 * 1000;
     @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_6 = 10 * 60 * 1000;
     @VisibleForTesting static final long DEFAULT_COMPACT_THROTTLE_MIN_OOM_ADJ =
@@ -500,6 +500,10 @@ public class CachedAppOptimizer {
     private volatile boolean mUseCompaction = DEFAULT_USE_COMPACTION;
 
     private static final long APP_SWITCH_COMPACT_DELAY_MS = 10_000;
+
+    private static final long COMPACT_LAUNCH_DEFER_DURATION_MS = 1_500;
+
+    private volatile long mLastAppLaunchUptime = 0;
 
     private volatile boolean mUseFreezer = false; // set to DEFAULT in init()
     @GuardedBy("this")
@@ -1493,6 +1497,11 @@ public class CachedAppOptimizer {
                         mCompactionHandler.obtainMessage(COMPACT_APP_SWITCH_MSG, app),
                         APP_SWITCH_COMPACT_DELAY_MS);
             }
+
+            if (newAdj <= ProcessList.FOREGROUND_APP_ADJ
+                    && oldAdj > ProcessList.FOREGROUND_APP_ADJ) {
+                mLastAppLaunchUptime = SystemClock.uptimeMillis();
+            }
         }
     }
 
@@ -1781,6 +1790,13 @@ public class CachedAppOptimizer {
                     }
 
                     if (!forceCompaction) {
+                        if (start - mLastAppLaunchUptime < COMPACT_LAUNCH_DEFER_DURATION_MS) {
+                            if (DEBUG_COMPACTION) {
+                                Slog.d(TAG_AM, "Skipping compaction for " + name
+                                        + ": app launch in progress");
+                            }
+                            return;
+                        }
                         if (shouldOomAdjThrottleCompaction(proc)) {
                             mCompactStatsManager.logCompactionThrottled(
                                     CompactionStatsManager.COMPACT_THROTTLE_REASON_OOM_ADJ,

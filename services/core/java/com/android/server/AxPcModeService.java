@@ -24,6 +24,7 @@ import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_3BUTTON_OVE
 import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_GESTURAL;
 import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_GESTURAL_OVERLAY;
 
+import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -42,11 +43,13 @@ import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Slog;
 import android.view.Display;
+import android.view.DisplayInfo;
 import android.view.IWindowManager;
 import android.view.SurfaceControl;
 
 import com.android.internal.os.BackgroundThread;
 import com.android.server.display.DisplayControl;
+import com.android.server.display.MiFreeformDisplayAdapter;
 import com.android.server.wm.WindowManagerInternal;
 
 public class AxPcModeService implements IAxPcModeService {
@@ -67,6 +70,9 @@ public class AxPcModeService implements IAxPcModeService {
     private static final String KEY_SYSTEM_NAV_GESTURAL = "system_nav_gestural";
     private static final String KEY_SYSTEM_NAV_2BUTTONS = "system_nav_2buttons";
     private static final String KEY_SYSTEM_NAV_3BUTTONS = "system_nav_3buttons";
+
+    private static final String SETTINGS_PKG = "com.android.settings";
+    private static final String PARTS_PKG = "com.android.axion.axionparts";
 
     private static final String AX_PC_MODE_PKG = "com.android.axion.axpcmode";
     private static final String AX_PC_MODE_ACTIVITY =
@@ -188,6 +194,20 @@ public class AxPcModeService implements IAxPcModeService {
         }
     }
 
+    private void forceStopSettings() {
+        BackgroundThread.getHandler().post(() -> {
+            try {
+                ActivityManager am = mContext.getSystemService(ActivityManager.class);
+                if (am != null) {
+                    am.forceStopPackageAsUser(SETTINGS_PKG, UserHandle.USER_CURRENT);
+                    am.forceStopPackageAsUser(PARTS_PKG, UserHandle.USER_CURRENT);
+                }
+            } catch (Exception e) {
+                Slog.e(TAG, "Failed to force-stop " + SETTINGS_PKG, e);
+            }
+        });
+    }
+
     public void onDefaultDisplayMirroringChanged(boolean mirrored) {
         Slog.i(TAG, "Default display mirroring changed: " + mirrored);
         mHandler.post(() -> updateDisplayOffState(mirrored));
@@ -292,6 +312,8 @@ public class AxPcModeService implements IAxPcModeService {
                 setInternalDisplayPowerMode(true);
                 setTargetDisplayId(Display.INVALID_DISPLAY);
                 setAppEnabled(false);
+                
+                forceStopSettings();
             }
         } catch (Exception e) {
             Slog.e(TAG, "Failed to update PC mode state", e);
@@ -616,6 +638,16 @@ public class AxPcModeService implements IAxPcModeService {
 
     public void onDisplayAdded(int displayId) {
         Slog.i(TAG, "Display added (" + displayId + ")");
+        DisplayManagerInternal dmi = LocalServices.getService(DisplayManagerInternal.class);
+        if (dmi != null) {
+            DisplayInfo info = dmi.getDisplayInfo(displayId);
+            if (info != null && info.uniqueId != null
+                    && info.uniqueId.startsWith(MiFreeformDisplayAdapter.UNIQUE_ID_PREFIX)) {
+                Slog.d(TAG, "Ignoring freeform virtual display " + displayId
+                        + " uniqueId=" + info.uniqueId);
+                return;
+            }
+        }
         mHandler.post(() -> {
             setTargetDisplayId(displayId);
         });

@@ -16,6 +16,7 @@
 
 package com.android.systemui.routines.data
 
+import com.android.axion.platform.AxPlatformClient
 import com.android.systemui.routines.model.Action
 import com.android.systemui.routines.model.Condition
 import com.android.systemui.routines.model.Routine
@@ -95,6 +96,7 @@ class RoutineSerializer @Inject constructor() {
                 put(KEY_TYPE, Trigger.TYPE_WIFI_STATE)
                 put(KEY_CONNECTED, trigger.connected)
                 trigger.ssid?.let { put(KEY_SSID, it) }
+                trigger.ssidPattern?.let { put(KEY_SSID_PATTERN, it) }
             }
             is Trigger.BluetoothState -> {
                 put(KEY_TYPE, Trigger.TYPE_BLUETOOTH_STATE)
@@ -138,6 +140,10 @@ class RoutineSerializer @Inject constructor() {
                 put(KEY_RADIUS_METERS, trigger.radiusMeters.toDouble())
                 put(KEY_ENTERING, trigger.entering)
             }
+            is Trigger.CaptivePortal -> {
+                put(KEY_TYPE, Trigger.TYPE_CAPTIVE_PORTAL)
+                trigger.ssid?.let { put(KEY_SSID, it) }
+            }
         }
     }
 
@@ -161,6 +167,7 @@ class RoutineSerializer @Inject constructor() {
             Trigger.TYPE_WIFI_STATE -> Trigger.WifiState(
                 connected = json.getBoolean(KEY_CONNECTED),
                 ssid = json.optString(KEY_SSID, null),
+                ssidPattern = json.optString(KEY_SSID_PATTERN, null),
             )
             Trigger.TYPE_BLUETOOTH_STATE -> Trigger.BluetoothState(
                 connected = json.getBoolean(KEY_CONNECTED),
@@ -170,7 +177,7 @@ class RoutineSerializer @Inject constructor() {
                 on = json.getBoolean(KEY_ON),
             )
             Trigger.TYPE_FEATURE_STATE -> Trigger.FeatureState(
-                feature = json.getString(KEY_FEATURE),
+                feature = resolveFeature(json.getString(KEY_FEATURE)),
                 active = json.getBoolean(KEY_ACTIVE),
             )
             Trigger.TYPE_HEADPHONES_STATE -> Trigger.HeadphonesState(
@@ -194,6 +201,9 @@ class RoutineSerializer @Inject constructor() {
                 longitude = json.getDouble(KEY_LONGITUDE),
                 radiusMeters = json.getDouble(KEY_RADIUS_METERS).toFloat(),
                 entering = json.getBoolean(KEY_ENTERING),
+            )
+            Trigger.TYPE_CAPTIVE_PORTAL -> Trigger.CaptivePortal(
+                ssid = json.optString(KEY_SSID, null),
             )
             else -> throw IllegalArgumentException("Unknown trigger type: ${json.getString(KEY_TYPE)}")
         }
@@ -223,6 +233,7 @@ class RoutineSerializer @Inject constructor() {
             is Condition.WifiConnected -> {
                 put(KEY_TYPE, Condition.TYPE_WIFI_CONNECTED)
                 condition.ssid?.let { put(KEY_SSID, it) }
+                condition.ssidPattern?.let { put(KEY_SSID_PATTERN, it) }
             }
             is Condition.BluetoothConnected -> {
                 put(KEY_TYPE, Condition.TYPE_BLUETOOTH_CONNECTED)
@@ -248,6 +259,11 @@ class RoutineSerializer @Inject constructor() {
                 put(KEY_LONGITUDE, condition.longitude)
                 put(KEY_RADIUS_METERS, condition.radiusMeters.toDouble())
             }
+            is Condition.IpAddress -> {
+                put(KEY_TYPE, Condition.TYPE_IP_ADDRESS)
+                put(KEY_CIDR, condition.cidr)
+                put(KEY_IS_REGEX, condition.isRegex)
+            }
         }
     }
 
@@ -271,6 +287,7 @@ class RoutineSerializer @Inject constructor() {
             )
             Condition.TYPE_WIFI_CONNECTED -> Condition.WifiConnected(
                 ssid = json.optString(KEY_SSID, null),
+                ssidPattern = json.optString(KEY_SSID_PATTERN, null),
             )
             Condition.TYPE_BLUETOOTH_CONNECTED -> Condition.BluetoothConnected(
                 deviceAddress = json.optString(KEY_DEVICE_ADDRESS, null),
@@ -279,7 +296,7 @@ class RoutineSerializer @Inject constructor() {
                 on = json.getBoolean(KEY_ON),
             )
             Condition.TYPE_FEATURE_ACTIVE -> Condition.FeatureActive(
-                feature = json.getString(KEY_FEATURE),
+                feature = resolveFeature(json.getString(KEY_FEATURE)),
                 active = json.getBoolean(KEY_ACTIVE),
             )
             Condition.TYPE_SENSOR_BLOCKED -> Condition.SensorBlocked(
@@ -290,6 +307,10 @@ class RoutineSerializer @Inject constructor() {
                 latitude = json.getDouble(KEY_LATITUDE),
                 longitude = json.getDouble(KEY_LONGITUDE),
                 radiusMeters = json.getDouble(KEY_RADIUS_METERS).toFloat(),
+            )
+            Condition.TYPE_IP_ADDRESS -> Condition.IpAddress(
+                cidr = json.getString(KEY_CIDR),
+                isRegex = json.optBoolean(KEY_IS_REGEX, false),
             )
             else -> throw IllegalArgumentException("Unknown condition type: ${json.getString(KEY_TYPE)}")
         }
@@ -347,17 +368,34 @@ class RoutineSerializer @Inject constructor() {
                 put(KEY_SENSOR, action.sensor)
                 put(KEY_BLOCKED, action.blocked)
             }
+            is Action.PlaySound -> {
+                put(KEY_TYPE, Action.TYPE_PLAY_SOUND)
+                put(KEY_SOUND_TYPE, action.soundType)
+                action.uri?.let { put(KEY_URI, it) }
+            }
+            is Action.HttpRequest -> {
+                put(KEY_TYPE, Action.TYPE_HTTP_REQUEST)
+                put(KEY_URL, action.url)
+                put(KEY_METHOD, action.method)
+                if (action.headers.isNotEmpty()) {
+                    put(KEY_HEADERS, JSONObject(action.headers))
+                }
+                action.body?.let { put(KEY_BODY, it) }
+                put(KEY_TIMEOUT_MS, action.timeoutMs)
+                put(KEY_IGNORE_SSL_ERRORS, action.ignoreSslErrors)
+                put(KEY_REQUIRE_VALIDATED_INTERNET, action.requireValidatedInternet)
+            }
         }
     }
 
     private fun deserializeAction(json: JSONObject): Action =
         when (json.getString(KEY_TYPE)) {
             Action.TYPE_SET_FEATURE -> Action.SetFeature(
-                feature = json.getString(KEY_FEATURE),
+                feature = resolveFeature(json.getString(KEY_FEATURE)),
                 enabled = json.getBoolean(KEY_ENABLED),
             )
             Action.TYPE_TOGGLE_FEATURE -> Action.ToggleFeature(
-                feature = json.getString(KEY_FEATURE),
+                feature = resolveFeature(json.getString(KEY_FEATURE)),
             )
             Action.TYPE_SET_VOLUME -> Action.SetVolume(
                 streamType = json.getInt(KEY_STREAM_TYPE),
@@ -392,6 +430,19 @@ class RoutineSerializer @Inject constructor() {
                 sensor = json.getInt(KEY_SENSOR),
                 blocked = json.getBoolean(KEY_BLOCKED),
             )
+            Action.TYPE_PLAY_SOUND -> Action.PlaySound(
+                soundType = json.getInt(KEY_SOUND_TYPE),
+                uri = json.optString(KEY_URI, null),
+            )
+            Action.TYPE_HTTP_REQUEST -> Action.HttpRequest(
+                url = json.getString(KEY_URL),
+                method = json.optString(KEY_METHOD, Action.METHOD_GET),
+                headers = deserializeStringMap(json.optJSONObject(KEY_HEADERS)),
+                body = json.optString(KEY_BODY, null),
+                timeoutMs = json.optInt(KEY_TIMEOUT_MS, Action.DEFAULT_HTTP_TIMEOUT_MS),
+                ignoreSslErrors = json.optBoolean(KEY_IGNORE_SSL_ERRORS, false),
+                requireValidatedInternet = json.optBoolean(KEY_REQUIRE_VALIDATED_INTERNET, true),
+            )
             else -> throw IllegalArgumentException("Unknown action type: ${json.getString(KEY_TYPE)}")
         }
 
@@ -403,7 +454,7 @@ class RoutineSerializer @Inject constructor() {
     }
 
     private fun deserializeIntSet(array: JSONArray?): Set<Int> {
-        if (array == null) return Trigger.ALL_DAYS
+        if (array == null || array.length() == 0) return Trigger.ALL_DAYS
         return (0 until array.length()).map { array.getInt(it) }.toSet()
     }
 
@@ -412,7 +463,17 @@ class RoutineSerializer @Inject constructor() {
         return json.keys().asSequence().associateWith { json.getString(it) }
     }
 
+    private fun resolveFeature(name: String): String =
+        AxPlatformClient.resolveFeature(name)
+            ?: GUI_TO_FEATURE[name]
+            ?: name
+
     companion object {
+
+        private val GUI_TO_FEATURE = mapOf(
+            "do_not_disturb" to AxPlatformClient.FEATURE_ZEN,
+            "auto_rotate" to AxPlatformClient.FEATURE_ROTATION,
+        )
         private const val KEY_ID = "id"
         private const val KEY_NAME = "name"
         private const val KEY_ENABLED = "enabled"
@@ -431,6 +492,7 @@ class RoutineSerializer @Inject constructor() {
         private const val KEY_DIRECTION = "direction"
         private const val KEY_CONNECTED = "connected"
         private const val KEY_SSID = "ssid"
+        private const val KEY_SSID_PATTERN = "ssid_pattern"
         private const val KEY_DEVICE_ADDRESS = "device_address"
         private const val KEY_ON = "on"
         private const val KEY_FEATURE = "feature"
@@ -460,5 +522,16 @@ class RoutineSerializer @Inject constructor() {
         private const val KEY_LONGITUDE = "longitude"
         private const val KEY_RADIUS_METERS = "radius_meters"
         private const val KEY_ENTERING = "entering"
+        private const val KEY_SOUND_TYPE = "sound_type"
+        private const val KEY_URI = "uri"
+        private const val KEY_CIDR = "cidr"
+        private const val KEY_URL = "url"
+        private const val KEY_METHOD = "method"
+        private const val KEY_HEADERS = "headers"
+        private const val KEY_BODY = "body"
+        private const val KEY_TIMEOUT_MS = "timeout_ms"
+        private const val KEY_IS_REGEX = "is_regex"
+        private const val KEY_IGNORE_SSL_ERRORS = "ignore_ssl_errors"
+        private const val KEY_REQUIRE_VALIDATED_INTERNET = "require_validated_internet"
     }
 }

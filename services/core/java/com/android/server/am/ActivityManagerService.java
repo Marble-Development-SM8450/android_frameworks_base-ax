@@ -19878,11 +19878,56 @@ public class ActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
+    public void flingBoost(boolean active) {
+        AxExtServiceFactory.getAxBurstEngine().flingBoost(active);
+    }
+
+    @Override
+    public void compositionBoost(long durationMs) {
+        AxExtServiceFactory.getAxBurstEngine().compositionBoost(durationMs);
+    }
+
+    @Override
+    public void gpuBoost(boolean active) {
+        AxExtServiceFactory.getAxBurstEngine().gpuBoost(active);
+    }
+
+    @Override
+    public void shadeBoost(boolean active) {
+        AxExtServiceFactory.getAxBurstEngine().shadeBoost(active);
+    }
+
+    @Override
     public void releaseMemory(int minAdj, int maxKillCount, boolean includeUIProcesses, boolean skipCamera) {
         mHandler.post(() -> {
             AxExtServiceFactory.getMemoryManager().releaseMemory(
                 minAdj, maxKillCount, includeUIProcesses, skipCamera);
         });
+    }
+
+    @Override
+    public String getSpoofPifConfig() {
+        return AxExtServiceFactory.getSpoofManager().getPifConfig();
+    }
+
+    @Override
+    public String getSpoofGamePropsConfig() {
+        return AxExtServiceFactory.getSpoofManager().getGamePropsConfig();
+    }
+
+    @Override
+    public String getSpoofTrickyStoreTarget() {
+        return AxExtServiceFactory.getSpoofManager().getTrickyStoreTarget();
+    }
+
+    @Override
+    public String getSpoofTrickyStoreKeyBox() {
+        return AxExtServiceFactory.getSpoofManager().getTrickyStoreKeyBox();
+    }
+
+    @Override
+    public String getSpoofTrickyStorePatch() {
+        return AxExtServiceFactory.getSpoofManager().getTrickyStorePatch();
     }
 
     // Set of IntentCreatorToken objects that are currently active.
